@@ -4634,6 +4634,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "glob",
  "itertools 0.14.0",
  "rerun",
  "rust-ocpp",
