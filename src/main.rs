@@ -147,17 +147,9 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            rec.log_static(
-                format!("{}/current/import/L1", date),
-                &rerun::SeriesLines::new()
-                    .with_colors([[255, 0, 0]])
-                    .with_names(["Current.Import(L1)"])
-                    .with_widths([2.0]),
-            )?;
-
             rec.set_timestamp_secs_since_epoch("time", timestamp.timestamp() as f64);
             rec.log(
-                format!("{}/current/import/L1", date),
+                "current/import/L1",
                 &Scalars::single(current_import_l1.unwrap_or(0.0)),
             )?;
 
