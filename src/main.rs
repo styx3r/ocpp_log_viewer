@@ -1,8 +1,8 @@
 use chrono::DateTime;
 use clap::Parser;
 use glob::glob;
-use rerun::external::re_log;
 use rerun::Scalars;
+use rerun::external::re_log;
 use std::fs;
 
 #[derive(Debug, clap::Parser)]
@@ -47,15 +47,22 @@ fn main() -> anyhow::Result<()> {
             .split(char::is_whitespace)
             .map(|s| s.to_owned())
             .collect::<Vec<_>>();
-        if line_parts.len() != 10 {
-            continue;
-        }
 
-        let (date, time, json) = (
-            line_parts[0].clone(),
-            line_parts[1].clone(),
-            line_parts[9].clone(),
-        );
+        let (date, time, json) = if line_parts.len() == 10 {
+            (
+                line_parts[0].clone(),
+                line_parts[1].clone(),
+                line_parts[9].clone(),
+            )
+        } else if line_parts.len() == 9 {
+            (
+                line_parts[0].clone(),
+                line_parts[1].clone(),
+                line_parts[8].clone(),
+            )
+        } else {
+            continue;
+        };
 
         let date_time = format!("{} {} +00:00", date, time);
         if date_time.is_empty() {
