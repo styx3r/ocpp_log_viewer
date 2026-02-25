@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
             continue;
         };
 
-        let date_time = format!("{} {} +00:00", date, time);
+        let date_time = format!("{} {} +00:00", date.as_str().replace("[", ""), time);
         if date_time.is_empty() {
             continue;
         }
