@@ -1,9 +1,11 @@
 use chrono::DateTime;
 use clap::Parser;
 use glob::glob;
-use rerun::Scalars;
 use rerun::external::re_log;
+use rerun::{RecordingStream, Scalars};
 use std::fs;
+
+use regex::Regex;
 
 #[derive(Debug, clap::Parser)]
 #[clap(author, version, about)]
@@ -13,12 +15,9 @@ pub struct Args {
     trace_file_directory: String,
 }
 
-fn main() -> anyhow::Result<()> {
-    re_log::setup_logging();
-    let args = Args::parse();
-
+fn read_file(file_directory: &String, file_extension: &str) -> Vec<String> {
     let mut contents: Vec<String> = Vec::new();
-    for entry in glob(format!("{}/**/*.trace", &args.trace_file_directory).as_str())
+    for entry in glob(format!("{}/**/*.{}", file_directory, file_extension).as_str())
         .expect("Failed to read glob pattern")
     {
         match entry {
@@ -32,7 +31,7 @@ fn main() -> anyhow::Result<()> {
                     // Handle the `error` case.
                     Err(_) => {
                         // Write `msg` to `stderr`.
-                        panic!("Could not read file `{}`", args.trace_file_directory);
+                        panic!("Could not read file `{}`", file_directory);
                     }
                 };
             }
@@ -40,9 +39,11 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let rec = rerun::RecordingStreamBuilder::new("OcppMeter values").spawn()?;
+    contents
+}
 
-    for line in &contents {
+fn plot_trace_file(contents: &Vec<String>, rec: &RecordingStream) -> anyhow::Result<()> {
+    for line in contents {
         let line_parts = line
             .split(char::is_whitespace)
             .map(|s| s.to_owned())
@@ -206,6 +207,56 @@ fn main() -> anyhow::Result<()> {
             )?;
         }
     }
+
+    Ok(())
+}
+
+fn plot_log_file(contents: &Vec<String>, rec: &RecordingStream) -> anyhow::Result<()> {
+    let re = Regex::new(r"([a-zA-Z]+) (-?[0-9]+(\.[0-9]+)?) \+ (-?[0-9]+(\.[0-9]+)?) \+ (-?[0-9]+(\.[0-9]+)?) \+ (-?[0-9]+(\.[0-9]+)?) = (-?[0-9]+(\.[0-9]+)?)").unwrap();
+    for line in contents {
+        let line_parts = line
+            .split(char::is_whitespace)
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+
+        if line_parts.len() < 2 {
+            continue;
+        }
+        let (date, time) = (line_parts[0].clone(), line_parts[1].clone());
+        let date_time = format!("{} {} +00:00", date.as_str().replace("[", ""), time);
+        if date_time.is_empty() {
+            continue;
+        }
+
+        let timestamp = match DateTime::parse_from_str(date_time.as_str(), "%Y-%m-%d %H:%M:%S %z") {
+            Ok(d) => d,
+            _ => continue,
+        };
+
+        let Some(caps) = re.captures(line.as_str()) else { continue };
+
+        rec.set_timestamp_secs_since_epoch("time", timestamp.timestamp() as f64);
+        rec.log("pv/production", &Scalars::single(caps[2].parse::<f64>()?))?;
+        rec.log("battery/load", &Scalars::single(caps[6].parse::<f64>()?))?;
+        rec.log("ev/import", &Scalars::single(caps[8].parse::<f64>()?))?;
+        rec.log("load/overall", &Scalars::single((caps[4].parse::<f64>()? + caps[8].parse::<f64>()?).abs()))?;
+        rec.log("overproduction/overall", &Scalars::single(caps[10].parse::<f64>()?))?;
+    }
+
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    re_log::setup_logging();
+    let args = Args::parse();
+
+    let trace_contents: Vec<String> = read_file(&args.trace_file_directory, "trace");
+    let log_contents: Vec<String> = read_file(&args.trace_file_directory, "log");
+
+    let rec = rerun::RecordingStreamBuilder::new("OcppMeter values").spawn()?;
+
+    plot_trace_file(&trace_contents, &rec)?;
+    plot_log_file(&log_contents, &rec)?;
 
     Ok(())
 }

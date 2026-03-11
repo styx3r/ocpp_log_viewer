@@ -4636,6 +4636,7 @@ dependencies = [
  "clap",
  "glob",
  "itertools 0.14.0",
+ "regex",
  "rerun",
  "rust-ocpp",
  "serde",

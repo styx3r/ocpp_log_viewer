@@ -13,3 +13,4 @@ itertools = "0.14.0"
 chrono = "0.4.43"
 rust-ocpp = { version = "3.0.4", features = ["v1_6", "v2_0_1"] }
 glob = "0.3.3"
+regex = "1.12.3"
