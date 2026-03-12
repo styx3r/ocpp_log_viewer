@@ -1,8 +1,14 @@
 use chrono::DateTime;
 use clap::Parser;
 use glob::glob;
-use rerun::external::re_log;
-use rerun::{RecordingStream, Scalars};
+use rerun::{
+    RecordingStream, Scalars,
+    blueprint::{Blueprint, ContainerLike, Grid, Tabs, TimePanel, TimeSeriesView, Vertical},
+    external::{
+        re_log,
+        re_sdk_types::blueprint::components::{LoopMode, PanelState, PlayState},
+    },
+};
 use std::fs;
 
 use regex::Regex;
@@ -233,17 +239,67 @@ fn plot_log_file(contents: &Vec<String>, rec: &RecordingStream) -> anyhow::Resul
             _ => continue,
         };
 
-        let Some(caps) = re.captures(line.as_str()) else { continue };
+        let Some(caps) = re.captures(line.as_str()) else {
+            continue;
+        };
 
         rec.set_timestamp_secs_since_epoch("time", timestamp.timestamp() as f64);
-        rec.log("pv/production", &Scalars::single(caps[2].parse::<f64>()?))?;
-        rec.log("battery/load", &Scalars::single(caps[6].parse::<f64>()?))?;
-        rec.log("ev/import", &Scalars::single(caps[8].parse::<f64>()?))?;
-        rec.log("load/overall", &Scalars::single((caps[4].parse::<f64>()? + caps[8].parse::<f64>()?).abs()))?;
-        rec.log("overproduction/overall", &Scalars::single(caps[10].parse::<f64>()?))?;
+        rec.log(
+            "/log/pv_production",
+            &Scalars::single(caps[2].parse::<f64>()?),
+        )?;
+        rec.log(
+            "/log/battery_load",
+            &Scalars::single(caps[6].parse::<f64>()?),
+        )?;
+        rec.log("/log/ev_import", &Scalars::single(caps[8].parse::<f64>()?))?;
+        rec.log(
+            "/log/load_overall",
+            &Scalars::single((caps[4].parse::<f64>()? + caps[8].parse::<f64>()?).abs()),
+        )?;
+        rec.log(
+            "/log/overproduction",
+            &Scalars::single(caps[10].parse::<f64>()?),
+        )?;
     }
 
     Ok(())
+}
+
+fn setup_blueprint() -> Blueprint {
+    Blueprint::new(Grid::new(vec![ContainerLike::from(Tabs::new(vec![
+        ContainerLike::from(Vertical::new(vec![
+            ContainerLike::from(Grid::new(vec![
+                ContainerLike::from(
+                    TimeSeriesView::new("Current")
+                        .with_origin("/")
+                        .with_contents(vec!["current/**"]),
+                ),
+                ContainerLike::from(
+                    TimeSeriesView::new("Power")
+                        .with_origin("/")
+                        .with_contents(vec!["power/**"]),
+                ),
+            ])),
+            ContainerLike::from(
+                TimeSeriesView::new("Voltage")
+                    .with_origin("/")
+                    .with_contents(vec!["voltage/**"]),
+            ),
+        ])),
+        ContainerLike::from(Grid::new(vec![ContainerLike::from(
+            TimeSeriesView::new("Log")
+                .with_origin("/")
+                .with_contents(vec!["/log/**"]),
+        )])),
+    ]))]))
+    .with_time_panel(
+        TimePanel::new()
+            .with_state(PanelState::Collapsed)
+            .with_timeline("time")
+            .with_loop_mode(LoopMode::Selection)
+            .with_play_state(PlayState::Following),
+    )
 }
 
 fn main() -> anyhow::Result<()> {
@@ -253,7 +309,9 @@ fn main() -> anyhow::Result<()> {
     let trace_contents: Vec<String> = read_file(&args.trace_file_directory, "trace");
     let log_contents: Vec<String> = read_file(&args.trace_file_directory, "log");
 
-    let rec = rerun::RecordingStreamBuilder::new("OcppMeter values").spawn()?;
+    let rec = rerun::RecordingStreamBuilder::new("OcppMeter values")
+        .with_blueprint(setup_blueprint())
+        .spawn()?;
 
     plot_trace_file(&trace_contents, &rec)?;
     plot_log_file(&log_contents, &rec)?;
